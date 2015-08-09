@@ -17,6 +17,7 @@ const source = `
 func BenchmarkV7(b *testing.B) {
 	vm := v7.New()
 	defer vm.Destroy()
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		_, err := vm.Exec(source)
@@ -28,6 +29,7 @@ func BenchmarkV7(b *testing.B) {
 
 func BenchmarkDuktape(b *testing.B) {
 	vm := duktape.NewContext()
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		if vm.PevalString(source) == 1 {
@@ -40,6 +42,7 @@ func BenchmarkDuktape(b *testing.B) {
 
 func BenchmarkOtto(b *testing.B) {
 	vm := otto.New()
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		_, err := vm.Run(source)

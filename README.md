@@ -43,13 +43,13 @@ result: 3.14
 # Benchmarks
 
 ```
-$ cd ./benchmarks && go test -bench .
+$ cd benchmarks && go test -bench .
 testing: warning: no tests to run
 PASS
-BenchmarkV7       200000              9920 ns/op
-BenchmarkDuktape           30000             53009 ns/op
-BenchmarkOtto      50000             25725 ns/op
-ok      github.com/bluele/go-v7/benchmarks      5.813s
+BenchmarkV7       200000              9176 ns/op
+BenchmarkDuktape           30000             56500 ns/op
+BenchmarkOtto      50000             24019 ns/op
+ok      github.com/bluele/go-v7/benchmarks      5.717s
 ```
 
 # Author
