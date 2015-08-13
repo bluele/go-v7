@@ -73,8 +73,7 @@ type Context struct {
 }
 
 type Function struct {
-	ctx *C.struct_v7
-	// repl *C.struct_v7_function
+	ctx  *C.struct_v7
 	repl C.v7_val_t
 }
 
