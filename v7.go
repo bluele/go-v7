@@ -23,11 +23,9 @@ import (
 	"unsafe"
 )
 
-type Value struct{}
-
 var (
-	UndefinedValue = &Value{}
-	NullValue      = &Value{}
+	UndefinedValue = &JSUndefined{}
+	NullValue      = &JSNull{}
 )
 
 const (
@@ -72,12 +70,12 @@ type Context struct {
 	vm *C.struct_v7
 }
 
-type Function struct {
+type JSFunction struct {
 	ctx  *C.struct_v7
 	repl C.v7_val_t
 }
 
-func (fc Function) Call(args ...interface{}) (interface{}, error) {
+func (fc *JSFunction) Call(args ...interface{}) (interface{}, error) {
 	result := C.v7_apply(fc.ctx, fc.repl, C.v7_create_undefined(), C.v7_create_undefined())
 	return toValue(fc.ctx, result)
 }
@@ -97,6 +95,15 @@ func (v *V7) Exec(js string) (interface{}, error) {
 	return toValue(v.ctx, result)
 }
 
+/*
+Value compatibility between js and go.
+
+js => go
+number => float64
+bool => boolean
+string => string
+function => v7.Function
+*/
 func toValue(ctx *C.struct_v7, result C.v7_val_t) (interface{}, error) {
 	switch C._val_type(ctx, C.uint64_t(result)) {
 	case _V7_TYPE_UNDEFINED:
@@ -104,31 +111,31 @@ func toValue(ctx *C.struct_v7, result C.v7_val_t) (interface{}, error) {
 	case _V7_TYPE_NULL:
 		return NullValue, nil
 	case _V7_TYPE_NUMBER:
-		return float64(C.v7_to_number(result)), nil
+		return JSNumber(C.v7_to_number(result)), nil
 	case _V7_TYPE_STRING:
-		return C.GoString(C._v7_to_string(ctx, &result)), nil
+		return JSString(C.GoString(C._v7_to_string(ctx, &result))), nil
 	case _V7_TYPE_BOOLEAN:
 		if int(C.v7_to_boolean(result)) == 0 {
-			return false, nil
+			return JSFalse, nil
 		} else {
-			return true, nil
+			return JSTrue, nil
 		}
 	case _V7_TYPE_ARRAY_OBJECT:
-		var a []interface{}
+		var arr JSArray
 		js := _v7_to_json(ctx, result)
-		if err := json.Unmarshal(js, &a); err != nil {
+		if err := json.Unmarshal(js, &arr); err != nil {
 			return nil, err
 		}
-		return a, nil
+		return arr, nil
 	case _V7_TYPE_GENERIC_OBJECT:
-		var m map[string]interface{}
+		var obj JSObject
 		js := _v7_to_json(ctx, result)
-		if err := json.Unmarshal(js, &m); err != nil {
+		if err := json.Unmarshal(js, &obj); err != nil {
 			return nil, err
 		}
-		return m, nil
+		return obj, nil
 	case _V7_TYPE_FUNCTION_OBJECT:
-		return Function{ctx, result}, nil
+		return &JSFunction{ctx, result}, nil
 	default:
 		return nil, errors.New("Undefined error")
 	}
