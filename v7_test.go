@@ -2,7 +2,6 @@ package v7_test
 
 import (
 	"github.com/bluele/go-v7"
-	"log"
 	"testing"
 )
 
@@ -17,7 +16,6 @@ func TestExecBoolean(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	log.Println(ret)
 	if bl, ok := ret.(bool); !ok || bl != true {
 		t.Error("value: not true")
 	}

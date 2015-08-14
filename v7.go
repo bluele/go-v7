@@ -18,7 +18,6 @@ const char *_v7_to_string(struct v7 *v, v7_val_t *value) {
 import "C"
 
 import (
-	"encoding/json"
 	"errors"
 	"unsafe"
 )
@@ -53,11 +52,11 @@ const (
 	_V7_NUM_TYPES
 )
 
-// TODO fix memory leaks.
 func _v7_to_json(ctx *C.struct_v7, val C.v7_val_t) []byte {
 	size := 255
 	buf := make([]byte, size)
 	p := C.CString(string(buf))
+	defer C.free(unsafe.Pointer(p))
 	ret := C.v7_to_json(ctx, val, p, C.size_t(size))
 	return []byte(C.GoString(ret))
 }
@@ -103,6 +102,8 @@ number => float64
 bool => boolean
 string => string
 function => v7.Function
+array => []byte
+object => []byte
 */
 func toValue(ctx *C.struct_v7, result C.v7_val_t) (interface{}, error) {
 	switch C._val_type(ctx, C.uint64_t(result)) {
@@ -120,20 +121,8 @@ func toValue(ctx *C.struct_v7, result C.v7_val_t) (interface{}, error) {
 		} else {
 			return JSTrue, nil
 		}
-	case _V7_TYPE_ARRAY_OBJECT:
-		var arr JSArray
-		js := _v7_to_json(ctx, result)
-		if err := json.Unmarshal(js, &arr); err != nil {
-			return nil, err
-		}
-		return arr, nil
-	case _V7_TYPE_GENERIC_OBJECT:
-		var obj JSObject
-		js := _v7_to_json(ctx, result)
-		if err := json.Unmarshal(js, &obj); err != nil {
-			return nil, err
-		}
-		return obj, nil
+	case _V7_TYPE_ARRAY_OBJECT, _V7_TYPE_GENERIC_OBJECT:
+		return _v7_to_json(ctx, result), nil
 	case _V7_TYPE_FUNCTION_OBJECT:
 		return &JSFunction{ctx, result}, nil
 	default:
