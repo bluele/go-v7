@@ -2,13 +2,8 @@ package v7
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
-)
-
-var (
-	errNegativeInt = errors.New("go-v7: unexpected value for Uint64")
 )
 
 func Int(reply interface{}, err error) (int, error) {

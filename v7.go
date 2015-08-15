@@ -18,7 +18,6 @@ const char *_v7_to_string(struct v7 *v, v7_val_t *value) {
 import "C"
 
 import (
-	"errors"
 	"unsafe"
 )
 
@@ -50,10 +49,11 @@ const (
 	_V7_TYPE_ERROR_OBJECT
 	_V7_TYPE_MAX_OBJECT_TYPE
 	_V7_NUM_TYPES
+
+	defaultBufSize = 255
 )
 
-func _v7_to_json(ctx *C.struct_v7, val C.v7_val_t) []byte {
-	size := 255
+func _v7_to_json(ctx *C.struct_v7, val C.v7_val_t, size int) []byte {
 	buf := make([]byte, size)
 	p := C.CString(string(buf))
 	defer C.free(unsafe.Pointer(p))
@@ -62,26 +62,46 @@ func _v7_to_json(ctx *C.struct_v7, val C.v7_val_t) []byte {
 }
 
 type V7 struct {
-	ctx *C.struct_v7
-}
-
-type Context struct {
-	vm *C.struct_v7
+	ctx  *Context
+	size int
 }
 
 type JSFunction struct {
-	ctx  *C.struct_v7
-	repl C.v7_val_t
+	ctx   *Context
+	value C.v7_val_t
+}
+
+type Context struct {
+	rctx    *C.struct_v7
+	bufSize int
+}
+
+func NewContext() *Context {
+	return &Context{
+		rctx:    C.v7_create(),
+		bufSize: defaultBufSize,
+	}
 }
 
 func (fc *JSFunction) Call(args ...interface{}) (interface{}, error) {
-	result := C.v7_apply(fc.ctx, fc.repl, C.v7_create_undefined(), C.v7_create_undefined())
+	result := C.v7_apply(fc.ctx.rctx, fc.value, C.v7_create_undefined(), C.v7_create_undefined())
 	return toValue(fc.ctx, result)
 }
 
 func New() *V7 {
-	v := C.v7_create()
-	return &V7{ctx: v}
+	return &V7{ctx: NewContext()}
+}
+
+func (v *V7) RawContext() *C.struct_v7 {
+	return v.ctx.rctx
+}
+
+func (v *V7) BufferSize() int {
+	return v.size
+}
+
+func (v *V7) ChangeBufferSize(size int) {
+	v.ctx.bufSize = size
 }
 
 func (v *V7) Exec(js string) (interface{}, error) {
@@ -89,7 +109,7 @@ func (v *V7) Exec(js string) (interface{}, error) {
 	defer C.free(unsafe.Pointer(_js))
 
 	var result C.v7_val_t
-	C.v7_exec(v.ctx, &result, _js)
+	C.v7_exec(v.ctx.rctx, &result, _js)
 
 	return toValue(v.ctx, result)
 }
@@ -105,8 +125,9 @@ function => v7.Function
 array => []byte
 object => []byte
 */
-func toValue(ctx *C.struct_v7, result C.v7_val_t) (interface{}, error) {
-	switch C._val_type(ctx, C.uint64_t(result)) {
+func toValue(ctx *Context, result C.v7_val_t) (interface{}, error) {
+	rctx := ctx.rctx
+	switch C._val_type(rctx, C.uint64_t(result)) {
 	case _V7_TYPE_UNDEFINED:
 		return UndefinedValue, nil
 	case _V7_TYPE_NULL:
@@ -114,7 +135,7 @@ func toValue(ctx *C.struct_v7, result C.v7_val_t) (interface{}, error) {
 	case _V7_TYPE_NUMBER:
 		return JSNumber(C.v7_to_number(result)), nil
 	case _V7_TYPE_STRING:
-		return JSString(C.GoString(C._v7_to_string(ctx, &result))), nil
+		return JSString(C.GoString(C._v7_to_string(rctx, &result))), nil
 	case _V7_TYPE_BOOLEAN:
 		if int(C.v7_to_boolean(result)) == 0 {
 			return JSFalse, nil
@@ -122,14 +143,14 @@ func toValue(ctx *C.struct_v7, result C.v7_val_t) (interface{}, error) {
 			return JSTrue, nil
 		}
 	case _V7_TYPE_ARRAY_OBJECT, _V7_TYPE_GENERIC_OBJECT:
-		return _v7_to_json(ctx, result), nil
+		return _v7_to_json(rctx, result, ctx.bufSize), nil
 	case _V7_TYPE_FUNCTION_OBJECT:
 		return &JSFunction{ctx, result}, nil
 	default:
-		return nil, errors.New("Undefined error")
+		return nil, errUndefinedType
 	}
 }
 
 func (v *V7) Destroy() {
-	C.v7_destroy(v.ctx)
+	C.v7_destroy(v.RawContext())
 }
