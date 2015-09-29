@@ -13,7 +13,7 @@
  * See the GNU General Public License for more details.
  *
  * Alternatively, you can license this software under a commercial
- * license, as set out in <http://cesanta.com/products.html>.
+ * license, as set out in <https://www.cesanta.com/license>.
  */
 
 /*
@@ -81,30 +81,53 @@ struct v7 *v7_create_opt(struct v7_create_opts);
 /* Destroy V7 instance */
 void v7_destroy(struct v7 *);
 
-enum v7_err { V7_OK, V7_SYNTAX_ERROR, V7_EXEC_EXCEPTION, V7_STACK_OVERFLOW };
+enum v7_err {
+  V7_OK,
+  V7_SYNTAX_ERROR,
+  V7_EXEC_EXCEPTION,
+  V7_STACK_OVERFLOW,
+  V7_AST_TOO_LARGE,
+  V7_INVALID_ARG
+};
 
 /*
- * Execute JavaScript `js_code`, store result in `result` variable.
+ * Execute JavaScript `js_code`. The result of evaluation is stored in
+ * the `result` variable.
+ *
  * Return:
  *
  *  - V7_OK on success. `result` contains the result of execution.
  *  - V7_SYNTAX_ERROR if `js_code` in not a valid code. `result` is undefined.
  *  - V7_EXEC_EXCEPTION if `js_code` threw an exception. `result` stores
  *    an exception object.
+ *  - V7_AST_TOO_LARGE if `js_code` contains an AST segment longer than 16 bit.
+ *    `result` is undefined. To avoid this error, build V7 with V7_LARGE_AST.
  */
-enum v7_err v7_exec(struct v7 *, v7_val_t *result, const char *js_code);
+enum v7_err v7_exec(struct v7 *, const char *js_code, v7_val_t *result);
 
 /*
  * Same as `v7_exec()`, but loads source code from `path` file.
  */
-enum v7_err v7_exec_file(struct v7 *, v7_val_t *result, const char *path);
+enum v7_err v7_exec_file(struct v7 *, const char *path, v7_val_t *result);
 
 /*
  * Same as `v7_exec()`, but passes `this_obj` as `this` to the execution
  * context.
  */
-enum v7_err v7_exec_with(struct v7 *, v7_val_t *result, const char *js_code,
-                         v7_val_t this_obj);
+enum v7_err v7_exec_with(struct v7 *, const char *js_code, v7_val_t this_obj,
+                         v7_val_t *result);
+
+/*
+ * Parse `str` and store corresponding JavaScript object in `res` variable.
+ * String `str` should be '\0'-terminated.
+ * Return value and semantic is the same as for `v7_exec()`.
+ */
+enum v7_err v7_parse_json(struct v7 *, const char *str, v7_val_t *res);
+
+/*
+ * Same as `v7_parse_json()`, but loads JSON string from `path`.
+ */
+enum v7_err v7_parse_json_file(struct v7 *, const char *path, v7_val_t *res);
 
 /*
  * Compile JavaScript code `js_code` into the byte code and write generated
@@ -113,7 +136,8 @@ enum v7_err v7_exec_with(struct v7 *, v7_val_t *result, const char *js_code,
  * in the binary format, suitable for execution by V7 instance.
  * NOTE: `fp` must be a valid, opened, writable file stream.
  */
-void v7_compile(const char *js_code, int generate_binary_output, FILE *fp);
+enum v7_err v7_compile(const char *js_code, int generate_binary_output,
+                       FILE *fp);
 
 /*
  * Perform garbage collection.
@@ -155,6 +179,7 @@ v7_val_t v7_create_undefined(void);
 /*
  * Create string primitive value.
  * `str` must point to the utf8 string of length `len`.
+ * If `len` is ~0, `str` is assumed to be NUL-terminated and strlen(str) is used
  */
 v7_val_t v7_create_string(struct v7 *, const char *str, size_t len, int copy);
 
@@ -203,6 +228,12 @@ int v7_is_foreign(v7_val_t);
 
 /* Return true if given value is an array object */
 int v7_is_array(struct v7 *, v7_val_t);
+
+/* Return true if the object is an instance of a given constructor */
+int v7_is_instanceof(struct v7 *, v7_val_t o, const char *c);
+
+/* Return true if the object is an instance of a given constructor */
+int v7_is_instanceof_v(struct v7 *, v7_val_t o, v7_val_t c);
 
 /* Return `void *` pointer stored in `v7_val_t` */
 void *v7_to_foreign(v7_val_t);
@@ -254,17 +285,35 @@ v7_val_t v7_get(struct v7 *v7, v7_val_t obj, const char *name, size_t len);
  */
 char *v7_to_json(struct v7 *, v7_val_t val, char *buf, size_t buf_len);
 
+/* print a value to stdout */
+void v7_print(struct v7 *, v7_val_t val);
+
+/* print a value into a file */
+void v7_fprint(FILE *f, struct v7 *v7, v7_val_t v);
+
+/* print a value to stdout followed by a newline */
+void v7_println(struct v7 *, v7_val_t val);
+
+/* print a value into a file followed by a newline */
+void v7_fprintln(FILE *f, struct v7 *v7, v7_val_t v);
+
 /* Return true if given value is `true`, as in JavaScript `if (v)` statement */
 int v7_is_true(struct v7 *v7, v7_val_t v);
 
 /*
  * Call function `func` with arguments `args`, using `this_obj` as `this`.
  * `args` could be either undefined value, or be an array with arguments.
+ *
+ * Result can be NULL if you don't care about the return value.
  */
-v7_val_t v7_apply(struct v7 *, v7_val_t func, v7_val_t this_obj, v7_val_t args);
+enum v7_err v7_apply(struct v7 *, v7_val_t *result, v7_val_t func,
+                     v7_val_t this_obj, v7_val_t args);
 
 /* Throw an exception (Error object) with given formatted message. */
 void v7_throw(struct v7 *, const char *msg_fmt, ...);
+
+/* Throw an already existing object. */
+void v7_throw_value(struct v7 *, v7_val_t v);
 
 #define V7_PROPERTY_READ_ONLY 1
 #define V7_PROPERTY_DONT_ENUM 2
@@ -346,7 +395,7 @@ void v7_interrupt(struct v7 *v7);
 /*
  * Tells the GC about a JS value variable/field owned
  * by C code.
- * *
+ *
  * User C code should own v7_val_t variables
  * if the value's lifetime crosses any invocation
  * to the v7 runtime that creates new objects or new
@@ -376,7 +425,17 @@ void v7_own(struct v7 *v7, v7_val_t *v);
  */
 int v7_disown(struct v7 *v7, v7_val_t *v);
 
-int v7_main(int argc, char *argv[], void (*init_func)(struct v7 *));
+/* Prints stack trace recorded in the exception `e` to file `f` */
+void v7_fprint_stack_trace(FILE *f, struct v7 *v7, v7_val_t e);
+
+/* Print error object message and possibly stack trace to f */
+void v7_print_error(FILE *f, struct v7 *v7, const char *ctx, v7_val_t e);
+
+/* Print JS value `v` to the open file strean `f` */
+void v7_fprintln(FILE *f, struct v7 *v7, v7_val_t v);
+
+int v7_main(int argc, char *argv[], void (*init_func)(struct v7 *),
+            void (*fini_func)(struct v7 *));
 
 #ifdef __cplusplus
 }

@@ -23,7 +23,7 @@ func main() {
 	}
 	fmt.Println(res)
 
-	fmt.Println(res.(v7.Function).Call())
+	fmt.Println(res.(*v7.JSFunction).Call())
 
 	res, err = vm.Exec(`[1,2,3]`)
 	if err != nil {

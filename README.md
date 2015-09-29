@@ -35,9 +35,10 @@ func main() {
   fmt.Println("result:", res)
 }
 ```
-result: 3.14
+
+Output:
 ```
-3.14
+result: 3.14
 ```
 
 # Benchmarks

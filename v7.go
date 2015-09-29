@@ -18,6 +18,7 @@ const char *_v7_to_string(struct v7 *v, v7_val_t *value) {
 import "C"
 
 import (
+	"fmt"
 	"unsafe"
 )
 
@@ -53,6 +54,25 @@ const (
 	defaultBufSize = 255
 )
 
+// enum v7_err
+const (
+	_V7_OK = iota
+	_V7_SYNTAX_ERROR
+	_V7_EXEC_EXCEPTION
+	_V7_STACK_OVERFLOW
+	_V7_AST_TOO_LARGE
+	_V7_INVALID_ARG
+)
+
+var (
+	GO_V7_ERROR_TEMPLATE = "v7 error: %v"
+	GO_V7_SYNTAX_ERROR   = fmt.Errorf(GO_V7_ERROR_TEMPLATE, _V7_SYNTAX_ERROR)
+	GO_V7_EXEC_EXCEPTION = fmt.Errorf(GO_V7_ERROR_TEMPLATE, _V7_EXEC_EXCEPTION)
+	GO_V7_STACK_OVERFLOW = fmt.Errorf(GO_V7_ERROR_TEMPLATE, _V7_STACK_OVERFLOW)
+	GO_V7_AST_TOO_LARGE  = fmt.Errorf(GO_V7_ERROR_TEMPLATE, _V7_AST_TOO_LARGE)
+	GO_V7_INVALID_ARG    = fmt.Errorf(GO_V7_ERROR_TEMPLATE, _V7_INVALID_ARG)
+)
+
 func _v7_to_json(ctx *C.struct_v7, val C.v7_val_t, size int) []byte {
 	buf := make([]byte, size)
 	p := C.CString(string(buf))
@@ -83,9 +103,89 @@ func NewContext() *Context {
 	}
 }
 
+// Call JS function with arguments.
+// Arguments is converted as following table.
+// Go: Javascript
+// uint, int, float: number
+// []byte, string: string
+// bool: boolean
 func (fc *JSFunction) Call(args ...interface{}) (interface{}, error) {
-	result := C.v7_apply(fc.ctx.rctx, fc.value, C.v7_create_undefined(), C.v7_create_undefined())
+	var cargs *C.v7_val_t
+
+	if len(args) == 0 {
+		_cargs := C.v7_create_undefined()
+		cargs = &_cargs
+	} else {
+		var cobj *C.v7_val_t
+		_cargs := C.v7_create_array(fc.ctx.rctx)
+		for _, arg := range args {
+			switch arg.(type) {
+			case uint:
+				obj := C.v7_create_number(C.double(arg.(uint)))
+				cobj = &obj
+			case uint32:
+				obj := C.v7_create_number(C.double(arg.(uint32)))
+				cobj = &obj
+			case uint64:
+				obj := C.v7_create_number(C.double(arg.(uint64)))
+				cobj = &obj
+			case int:
+				obj := C.v7_create_number(C.double(arg.(int)))
+				cobj = &obj
+			case int32:
+				obj := C.v7_create_number(C.double(arg.(int32)))
+				cobj = &obj
+			case int64:
+				obj := C.v7_create_number(C.double(arg.(int64)))
+				cobj = &obj
+			case float32:
+				obj := C.v7_create_number(C.double(arg.(float32)))
+				cobj = &obj
+			case float64:
+				obj := C.v7_create_number(C.double(arg.(float64)))
+				cobj = &obj
+			case []byte, string:
+				ptr := C.CString(arg.(string))
+				defer C.free(unsafe.Pointer(ptr))
+				obj := C.v7_create_string(fc.ctx.rctx, ptr, C.size_t(len(arg.(string))), 0)
+				cobj = &obj
+			case bool:
+				obj := C.v7_create_boolean(arg.(C.int))
+				cobj = &obj
+			default:
+				return nil, fmt.Errorf("Unsupported type %T", arg)
+			}
+			C.v7_array_push(fc.ctx.rctx, _cargs, *cobj)
+		}
+		cargs = &_cargs
+	}
+
+	var result C.v7_val_t
+	err := wrapCError(C.v7_apply(fc.ctx.rctx, &result, fc.value, C.v7_create_undefined(), *cargs))
+	if err != nil {
+		return nil, err
+	}
+
 	return toValue(fc.ctx, result)
+}
+
+func wrapCError(cerr uint32) error {
+	switch cerr {
+	case _V7_OK:
+		return nil
+	case _V7_SYNTAX_ERROR:
+		return GO_V7_SYNTAX_ERROR
+	case _V7_EXEC_EXCEPTION:
+		return GO_V7_EXEC_EXCEPTION
+	case _V7_STACK_OVERFLOW:
+		return GO_V7_STACK_OVERFLOW
+	case _V7_AST_TOO_LARGE:
+		return GO_V7_AST_TOO_LARGE
+	case _V7_INVALID_ARG:
+		return GO_V7_INVALID_ARG
+	default:
+		return fmt.Errorf(GO_V7_ERROR_TEMPLATE, cerr)
+	}
 }
 
 func New() *V7 {
@@ -109,7 +209,7 @@ func (v *V7) Exec(js string) (interface{}, error) {
 	defer C.free(unsafe.Pointer(_js))
 
 	var result C.v7_val_t
-	C.v7_exec(v.ctx.rctx, &result, _js)
+	C.v7_exec(v.ctx.rctx, _js, &result)
 
 	return toValue(v.ctx, result)
 }
